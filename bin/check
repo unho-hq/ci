@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# Shared checks for every Unho repo.
+# Usage: check [--rapido]   (run from the repo root, next to check.conf)
+# Exit codes: 0 all green · 1 the code is wrong · 2 the CI is misconfigured.
+set -uo pipefail
+
+AQUI="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+MODO=completo
+[ "${1:-}" = "--rapido" ] && MODO=rapido
+CONF="${UNHO_CI_CONF:-check.conf}"
+
+if [ ! -f "$CONF" ]; then
+  echo "✗ Falta check.conf en $(pwd)"
+  exit 2
+fi
+
+leer() { sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" "$CONF" | head -1 | tr -d '\r'; }
+
+nombres=()
+comandos=()
+
+for n in $(leer integrados); do
+  if [ ! -f "$AQUI/checks/$n.sh" ]; then
+    echo "✗ check.conf pide un check integrado que no existe: $n"
+    exit 2
+  fi
+  nombres+=("$n")
+  comandos+=("bash '$AQUI/checks/$n.sh'")
+done
+
+while IFS= read -r linea; do
+  linea="${linea%$'\r'}"
+  tipo="${linea%%.*}"
+  resto="${linea#*.}"
+  nombre="$(echo "${resto%%=*}" | tr -d '[:space:]')"
+  cmd="$(echo "${resto#*=}" | sed 's/^[[:space:]]*//')"
+  if [ "$tipo" = "completo" ] && [ "$MODO" = "rapido" ]; then continue; fi
+  nombres+=("$nombre")
+  comandos+=("$cmd")
+done < <(grep -E '^(rapido|completo)\.[a-z0-9-]+[[:space:]]*=' "$CONF")
+
+if [ "${#nombres[@]}" -eq 0 ]; then
+  echo "✗ check.conf no pide ningún check"
+  exit 2
+fi
+
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+
+echo "Checks ($MODO): ${nombres[*]}"
+for i in "${!nombres[@]}"; do
+  (
+    inicio=$(date +%s)
+    bash -c "${comandos[$i]}" >"$TMP/$i.log" 2>&1
+    echo $? >"$TMP/$i.codigo"
+    echo $(($(date +%s) - inicio)) >"$TMP/$i.segundos"
+  ) &
+done
+wait
+
+final=0
+tabla="| Check | Resultado | Segundos |"$'\n'"|---|---|---|"
+for i in "${!nombres[@]}"; do
+  codigo=$(cat "$TMP/$i.codigo")
+  seg=$(cat "$TMP/$i.segundos")
+  case "$codigo" in
+    0) res="✓" ;;
+    2) res="✗ (CI mal montado)"; final=2 ;;
+    *) res="✗"; [ "$final" -eq 0 ] && final=1 ;;
+  esac
+  tabla+=$'\n'"| ${nombres[$i]} | $res | $seg |"
+  if [ "$codigo" != "0" ]; then
+    echo "──── ${nombres[$i]} (código $codigo) ────"
+    tail -n 60 "$TMP/$i.log"
+  fi
+done
+
+echo
+echo "$tabla"
+if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+  {
+    echo "### Checks ($MODO)"
+    echo
+    echo "$tabla"
+  } >>"$GITHUB_STEP_SUMMARY"
+fi
+
+case "$final" in
+  0) echo "✓ Todo en verde." ;;
+  1) echo "✗ Hay checks en rojo: el código tiene algo que arreglar." ;;
+  2) echo "✗ El CI está mal montado (check.conf o un check)." ;;
+esac
+exit "$final"

@@ -1,0 +1,14 @@
+# Copy to .github/workflows/ci.yml in each repo. Do not edit: comes from unho-hq/ci.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    uses: unho-hq/ci/.github/workflows/check.yml@v1
