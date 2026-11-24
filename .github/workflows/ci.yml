@@ -1,0 +1,22 @@
+# The ci repo is public, so it runs on GitHub's machines, never on our self-hosted runner
+# (a public repo must not run code from strangers on pop-os).
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  pruebas:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: git config --global user.email ci@example.com && git config --global user.name CI
+      - run: UNHO_CI_BASE=origin/main bash bin/check

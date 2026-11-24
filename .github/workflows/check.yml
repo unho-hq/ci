@@ -1,0 +1,37 @@
+# Reusable workflow: every repo calls it from its own ci.yml.
+# Pull request -> fast checks (they gate the merge). Push to main -> full checks (they gate production).
+name: check
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    name: ${{ github.event_name == 'pull_request' && 'rápido' || 'completo' }}
+    runs-on: [self-hosted, pop-os]
+    timeout-minutes: ${{ github.event_name == 'pull_request' && 10 || 45 }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        if: hashFiles('package.json') != ''
+        with:
+          node-version: 22
+      - name: pnpm
+        if: hashFiles('pnpm-lock.yaml') != ''
+        run: corepack enable && pnpm config set store-dir "$HOME/.cache/pnpm-store" && pnpm install --frozen-lockfile --prefer-offline
+      - name: npm
+        if: hashFiles('package-lock.json') != ''
+        run: npm ci --prefer-offline --no-audit --no-fund
+      - name: checks
+        env:
+          UNHO_CI_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || 'HEAD~1' }}
+        run: bash ./check.sh ${{ github.event_name == 'pull_request' && '--rapido' || '' }}
