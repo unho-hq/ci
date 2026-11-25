@@ -41,11 +41,21 @@ completo.build = pnpm build
 
 Para probar un cambio de este repo en otro sin publicarlo: `UNHO_CI_LOCAL=C:/Dev/unho-hq/ci ./check.sh`.
 
+## Las apps se ponen al día solas (`@unho/*`)
+
+`plantilla/actualizar-unho.yml` va en cada app como `.github/workflows/actualizar-unho.yml`. Cada hora (y cuando quieras desde Actions › «Actualizar @unho» › Run workflow) corre en `pop-os`:
+
+1. `bin/actualizar-unho.mjs` mira en el registro de casa si hay una `@unho/core` o `@unho/ui` más nueva **de la misma versión mayor** (la promesa de la 1.x: nada rompe). Una 2.0 no se aplica nunca sola: solo avisa.
+2. Si la hay: cambia `package.json` y el lock, y pasa el **CI completo**.
+3. Todo verde → commit `chore(deps): update @unho/ui to 1.1.0` directo a `main` (con él, a desarrollo). Algo rojo → no toca `main`; deja la rama `unho/actualizar` con el cambio y el workflow en rojo.
+
+GitHub (plan gratuito) no deja que los workflows abran PR en la organización, así que la puerta es el CI completo antes de subir, en lugar del CI de un PR. Ningún token extra: solo el del propio workflow.
+
 ## Este repo
 
 Es **público**: así cualquier repo privado lo baja y llama a su workflow sin claves. No tiene secretos, solo los checks. Su propio CI corre en las máquinas de GitHub, nunca en `pop-os`.
 
-- `bash tests/probar.sh`: 20 pruebas con repos de usar y tirar.
+- `bash tests/probar.sh`: 26 pruebas con repos de usar y tirar.
 - Publicar: PR → merge → mover la tag `v1` (y crear `v1.x.y`).
 
 **Pendiente (paso 6, con los paquetes):** la configuración compartida de Renovate.
