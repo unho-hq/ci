@@ -111,6 +111,58 @@ repo sinversion
 cp "$RAIZ/plantilla/check.sh" . && echo "integrados = sin-bom" >check.conf
 espera 2 "el stub sin version es CI mal montado" bash ./check.sh
 
+# Keeping @unho/* up to date (bin/actualizar-unho.mjs)
+repo actualizar
+mkdir -p web backend
+printf '{
+  "name": "x",
+  "workspaces": ["backend", "web"]
+}
+' >package.json
+printf '{
+  "dependencies": {
+    "@unho/core": "1.1.0",
+    "hono": "4.0.0"
+  }
+}
+' >backend/package.json
+printf '{
+  "dependencies": {
+    "@unho/ui": "1.0.0",
+    "react": "19.0.0"
+  }
+}
+' >web/package.json
+VERS='{"@unho/ui":["1.0.0","1.0.1","1.1.0","1.2.0-beta.1","2.0.0"],"@unho/core":["1.0.0","1.1.0"]}'
+actualizar() { UNHO_VERSIONES="$VERS" node "$RAIZ/bin/actualizar-unho.mjs" "$@"; }
+espera 0 "el plan sin --escribir no toca nada" actualizar
+n=$((n + 1))
+if grep -q '"@unho/ui": "1.0.0"' web/package.json; then echo "ok $n - sin --escribir los ficheros siguen igual"; else echo "not ok $n - sin --escribir ha cambiado web/package.json"; fallos=$((fallos + 1)); fi
+salida="$(actualizar --escribir)"
+n=$((n + 1))
+if grep -q '"@unho/ui": "1.1.0"' web/package.json && grep -q '"react": "19.0.0"' web/package.json && grep -q '"@unho/core": "1.1.0"' backend/package.json; then
+  echo "ok $n - sube @unho/ui a la última 1.x estable (ni beta ni 2.0) y no toca lo demás"
+else
+  echo "not ok $n - versiones mal escritas"; cat web/package.json backend/package.json; fallos=$((fallos + 1))
+fi
+n=$((n + 1))
+if echo "$salida" | grep -q '@unho/ui 2.0.0 es una versión mayor'; then echo "ok $n - avisa de la 2.0 sin aplicarla"; else echo "not ok $n - no avisa de la versión mayor"; fallos=$((fallos + 1)); fi
+out="$TMP/github_output"
+: >"$out"
+GITHUB_OUTPUT="$out" UNHO_VERSIONES="$VERS" node "$RAIZ/bin/actualizar-unho.mjs" >/dev/null
+n=$((n + 1))
+if grep -q '^cambios=false$' "$out"; then echo "ok $n - ya al día: cambios=false"; else echo "not ok $n - esperaba cambios=false"; cat "$out"; fallos=$((fallos + 1)); fi
+printf '{
+  "dependencies": {
+    "@unho/ui": "^1.0.0"
+  }
+}
+' >web/package.json
+: >"$out"
+GITHUB_OUTPUT="$out" UNHO_VERSIONES="$VERS" node "$RAIZ/bin/actualizar-unho.mjs" --escribir >/dev/null
+n=$((n + 1))
+if grep -q '^mensaje=chore(deps): update @unho/ui to 1.1.0$' "$out" && grep -q '"@unho/ui": "1.1.0"' web/package.json; then echo "ok $n - un rango ^ también se sube y el mensaje del commit sale bien"; else echo "not ok $n - rango ^ o mensaje mal"; cat "$out" web/package.json; fallos=$((fallos + 1)); fi
+
 echo "1..$n"
 if [ "$fallos" -gt 0 ]; then
   echo "# $fallos fallos"

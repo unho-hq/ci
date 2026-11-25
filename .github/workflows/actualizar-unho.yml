@@ -1,0 +1,78 @@
+# Reusable workflow: brings @unho/* to the newest version of the same major (1.x) in the
+# calling repo. Every app calls it every hour from its own actualizar-unho.yml.
+#
+# - Nothing new: ends in seconds.
+# - Something new: updates package.json and the lock, runs the FULL check (same as after a merge)
+#   and only if everything is green pushes the commit to main. Development then picks it up.
+# - Red: leaves the branch unho/actualizar with the change and fails, so it shows in Actions.
+#
+# GitHub (free plan) does not let workflows open PRs in this organisation, so the gate is the
+# full check run here before pushing, instead of a PR's CI.
+name: actualizar-unho
+
+on:
+  workflow_call:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: actualizar-unho-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  actualizar:
+    name: actualizar @unho
+    runs-on: [self-hosted, pop-os]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/checkout@v5
+        with:
+          repository: unho-hq/ci
+          ref: v1
+          path: .unho-ci
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: ¿Hay versión nueva?
+        id: plan
+        run: |
+          echo ".unho-ci/" >> .git/info/exclude
+          node .unho-ci/bin/actualizar-unho.mjs --escribir
+      - name: Instalar
+        if: steps.plan.outputs.cambios == 'true'
+        run: npm install --no-audit --no-fund
+      - name: CI completo
+        id: check
+        if: steps.plan.outputs.cambios == 'true'
+        env:
+          UNHO_CI_BASE: origin/main
+        run: bash ./check.sh
+      - name: Subir a main
+        if: steps.plan.outputs.cambios == 'true' && steps.check.outcome == 'success'
+        env:
+          MENSAJE: ${{ steps.plan.outputs.mensaje }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -u
+          git commit -q -m "$MENSAJE" -m "Automatic: same major, full CI green on pop-os."
+          git push origin HEAD:main
+          git push -q origin --delete unho/actualizar 2>/dev/null || true
+          echo "### ✓ $MENSAJE" >> "$GITHUB_STEP_SUMMARY"
+      - name: Dejar la rama si el CI falla
+        if: failure() && steps.plan.outputs.cambios == 'true'
+        env:
+          MENSAJE: ${{ steps.plan.outputs.mensaje }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c unho/actualizar
+          git add -u
+          git commit -q -m "$MENSAJE" -m "Automatic: the full CI failed; not pushed to main."
+          git push -f origin unho/actualizar
+          echo "### ✗ $MENSAJE: el CI completo falla. Rama unho/actualizar con el cambio." >> "$GITHUB_STEP_SUMMARY"

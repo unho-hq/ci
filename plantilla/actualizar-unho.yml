@@ -1,0 +1,15 @@
+# Copy to .github/workflows/actualizar-unho.yml in each app. Do not edit: comes from unho-hq/ci.
+# Every hour (and on demand from Actions) brings @unho/* to the newest 1.x, with the full CI.
+name: Actualizar @unho
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  actualizar:
+    uses: unho-hq/ci/.github/workflows/actualizar-unho.yml@v1
