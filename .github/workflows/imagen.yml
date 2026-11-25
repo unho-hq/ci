@@ -1,0 +1,38 @@
+# Reusable workflow: builds the app's image on our runner and pushes it to the home registry
+# (map §8.1 «construye en el CI y ejecuta en el servidor», D15 everything at home).
+# Each app calls it on push to main. Ops deploys the image by its digest.
+name: imagen
+
+on:
+  workflow_call:
+    outputs:
+      imagen:
+        description: The pushed image, pinned by digest (registro/app@sha256:…)
+        value: ${{ jobs.imagen.outputs.imagen }}
+
+permissions:
+  contents: read
+
+jobs:
+  imagen:
+    name: imagen
+    runs-on: [self-hosted, pop-os]
+    timeout-minutes: 20
+    outputs:
+      imagen: ${{ steps.subir.outputs.imagen }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Construir y subir
+        id: subir
+        env:
+          REGISTRO: 127.0.0.1:5000
+        run: |
+          app="$(sed -n 's/^app:[[:space:]]*\([a-z][a-z0-9-]*\).*/\1/p' unho.yaml | head -1)"
+          [ -n "$app" ] || { echo "unho.yaml no dice app:"; exit 2; }
+          etiqueta="$REGISTRO/$app:$GITHUB_SHA"
+          # --network host: npm reaches the home registry on Tailscale while building.
+          docker build --network host --label "unho.app=$app" --label "unho.commit=$GITHUB_SHA" -t "$etiqueta" .
+          docker push -q "$etiqueta"
+          imagen="$(docker image inspect --format '{{index .RepoDigests 0}}' "$etiqueta")"
+          echo "imagen=$imagen" >> "$GITHUB_OUTPUT"
+          echo "### Imagen: \`$imagen\`" >> "$GITHUB_STEP_SUMMARY"
