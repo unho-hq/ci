@@ -31,13 +31,17 @@ jobs:
         id: subir
         env:
           REGISTRO: 127.0.0.1:5000
+          COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+          RAMA: ${{ github.head_ref || github.ref_name }}
         working-directory: ${{ inputs.directorio }}
         run: |
           app="$(sed -n 's/^app:[[:space:]]*\([a-z][a-z0-9-]*\).*/\1/p' unho.yaml | head -1)"
           [ -n "$app" ] || { echo "unho.yaml no dice app:"; exit 2; }
-          etiqueta="$REGISTRO/$app:$GITHUB_SHA"
+          # On a pull request the image is the branch's own commit (not GitHub's merge commit), so Ops
+          # can offer it as a preview; «unho.rama» says which branch («main» for what can be put).
+          etiqueta="$REGISTRO/$app:$COMMIT"
           # --network host: npm reaches the home registry on Tailscale while building.
-          docker build --network host --label "unho.app=$app" --label "unho.commit=$GITHUB_SHA" -t "$etiqueta" .
+          docker build --network host --label "unho.app=$app" --label "unho.commit=$COMMIT" --label "unho.rama=$RAMA" -t "$etiqueta" .
           docker push -q "$etiqueta"
           imagen="$(docker image inspect --format '{{index .RepoDigests 0}}' "$etiqueta")"
           echo "imagen=$imagen" >> "$GITHUB_OUTPUT"
