@@ -55,6 +55,16 @@ GitHub (plan gratuito) no deja que los workflows abran PR en la organización, a
 
 `plantilla/imagen.yml` va en cada app como `.github/workflows/imagen.yml`. En cada push a `main` construye la imagen en `pop-os` (`Dockerfile` de la app) y la sube al registro de casa (`127.0.0.1:5000`, en `pop-os`), con el commit como etiqueta. El resumen del workflow dice la imagen por digest, que es lo que Ops despliega.
 
+Si la app no está en la raíz del repo (Ops vive en `consola/`), se le pasa la carpeta:
+
+```yaml
+jobs:
+  imagen:
+    uses: unho-hq/ci/.github/workflows/imagen.yml@v1
+    with:
+      directorio: consola
+```
+
 ## Este repo
 
 Es **público**: así cualquier repo privado lo baja y llama a su workflow sin claves. No tiene secretos, solo los checks. Su propio CI corre en las máquinas de GitHub, nunca en `pop-os`.

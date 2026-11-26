@@ -5,6 +5,11 @@ name: imagen
 
 on:
   workflow_call:
+    inputs:
+      directorio:
+        description: Folder with the app's unho.yaml and Dockerfile, when it is not the repo root (e.g. consola)
+        type: string
+        default: "."
     outputs:
       imagen:
         description: The pushed image, pinned by digest (registro/app@sha256:…)
@@ -26,6 +31,7 @@ jobs:
         id: subir
         env:
           REGISTRO: 127.0.0.1:5000
+        working-directory: ${{ inputs.directorio }}
         run: |
           app="$(sed -n 's/^app:[[:space:]]*\([a-z][a-z0-9-]*\).*/\1/p' unho.yaml | head -1)"
           [ -n "$app" ] || { echo "unho.yaml no dice app:"; exit 2; }
