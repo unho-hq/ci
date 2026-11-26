@@ -55,6 +55,8 @@ GitHub (plan gratuito) no deja que los workflows abran PR en la organización, a
 
 `plantilla/imagen.yml` va en cada app como `.github/workflows/imagen.yml`. En cada push a `main` construye la imagen en `pop-os` (`Dockerfile` de la app) y la sube al registro de casa (`127.0.0.1:5000`, en `pop-os`), con el commit como etiqueta. El resumen del workflow dice la imagen por digest, que es lo que Ops despliega.
 
+En cada pull request también se construye la imagen del commit de la rama (etiqueta `unho.rama`), para las vistas previas de Ops. «Poner una versión» solo ofrece las de `main`.
+
 Si la app no está en la raíz del repo (Ops vive en `consola/`), se le pasa la carpeta:
 
 ```yaml

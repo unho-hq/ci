@@ -1,10 +1,13 @@
 # Copy to .github/workflows/imagen.yml in each app. Do not edit: comes from unho-hq/ci.
-# On every push to main, build the app's image and push it to the home registry for Ops.
+# On every push to main (and every pull request, for previews), build the app's image and push
+# it to the home registry for Ops.
 name: Imagen
 
 on:
   push:
     branches: [main]
+  # Every pull request gets its image too, for Ops' previews («Vistas previas»).
+  pull_request:
   workflow_dispatch:
 
 permissions:
