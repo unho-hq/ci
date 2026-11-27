@@ -1,9 +1,12 @@
-# Reusable workflow: brings @unho/* to the newest version of the same major (1.x) in the
-# calling repo. Every app calls it every hour from its own actualizar-unho.yml.
+# Reusable workflow: brings @unho/* to the newest version of the same major in the calling repo.
+# Every app calls it every hour from its own actualizar-unho.yml.
 #
 # - Nothing new: ends in seconds.
 # - Something new: updates package.json and the lock, runs the FULL check (same as after a merge)
-#   and only if everything is green pushes the commit to main. Development then picks it up.
+#   and only if everything is green pushes the commit to main.
+# - Then, if the repo is an app (unho.yaml and Dockerfile), it builds that commit's image here:
+#   a push made by a workflow does not start the repo's other workflows (GitHub's rule), so without
+#   this step Ops would never get an image to put in development (map §5.4, layer 3).
 # - Red: leaves the branch unho/actualizar with the change and fails, so it shows in Actions.
 #
 # GitHub (free plan) does not let workflows open PRs in this organisation, so the gate is the
@@ -12,6 +15,11 @@ name: actualizar-unho
 
 on:
   workflow_call:
+    inputs:
+      directorio:
+        description: Folder with the app's package.json, check.sh and unho.yaml, when it is not the repo root (e.g. consola)
+        type: string
+        default: "."
 
 permissions:
   contents: write
@@ -24,7 +32,10 @@ jobs:
   actualizar:
     name: actualizar @unho
     runs-on: [self-hosted, pop-os]
-    timeout-minutes: 30
+    timeout-minutes: 40
+    defaults:
+      run:
+        working-directory: ${{ inputs.directorio }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -41,8 +52,8 @@ jobs:
       - name: ¿Hay versión nueva?
         id: plan
         run: |
-          echo ".unho-ci/" >> .git/info/exclude
-          node .unho-ci/bin/actualizar-unho.mjs --escribir
+          echo ".unho-ci/" >> "$GITHUB_WORKSPACE/.git/info/exclude"
+          node "$GITHUB_WORKSPACE/.unho-ci/bin/actualizar-unho.mjs" --escribir
       - name: Instalar
         if: steps.plan.outputs.cambios == 'true'
         run: npm install --no-audit --no-fund
@@ -53,6 +64,7 @@ jobs:
           UNHO_CI_BASE: origin/main
         run: bash ./check.sh
       - name: Subir a main
+        id: subir
         if: steps.plan.outputs.cambios == 'true' && steps.check.outcome == 'success'
         env:
           MENSAJE: ${{ steps.plan.outputs.mensaje }}
@@ -63,9 +75,27 @@ jobs:
           git commit -q -m "$MENSAJE" -m "Automatic: same major, full CI green on pop-os."
           git push origin HEAD:main
           git push -q origin --delete unho/actualizar 2>/dev/null || true
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "### ✓ $MENSAJE" >> "$GITHUB_STEP_SUMMARY"
+      - name: Imagen del commit subido
+        if: steps.subir.outcome == 'success'
+        env:
+          REGISTRO: 127.0.0.1:5000
+          COMMIT: ${{ steps.subir.outputs.commit }}
+        run: |
+          # Only apps have an image (the libraries do not).
+          if [ ! -f unho.yaml ] || [ ! -f Dockerfile ]; then echo "Sin unho.yaml o Dockerfile: no es una app, no hay imagen."; exit 0; fi
+          # The same build as imagen.yml, for this commit. The CI checkout is not part of the image.
+          rm -rf "$GITHUB_WORKSPACE/.unho-ci"
+          app="$(sed -n 's/^app:[[:space:]]*\([a-z][a-z0-9-]*\).*/\1/p' unho.yaml | head -1)"
+          [ -n "$app" ] || { echo "unho.yaml no dice app:"; exit 2; }
+          etiqueta="$REGISTRO/$app:$COMMIT"
+          docker build --network host --label "unho.app=$app" --label "unho.commit=$COMMIT" --label "unho.rama=main" -t "$etiqueta" .
+          docker push -q "$etiqueta"
+          imagen="$(docker image inspect --format '{{index .RepoDigests 0}}' "$etiqueta")"
+          echo "### Imagen: \`$imagen\`" >> "$GITHUB_STEP_SUMMARY"
       - name: Dejar la rama si el CI falla
-        if: failure() && steps.plan.outputs.cambios == 'true'
+        if: failure() && steps.plan.outputs.cambios == 'true' && steps.subir.outcome != 'success'
         env:
           MENSAJE: ${{ steps.plan.outputs.mensaje }}
         run: |
