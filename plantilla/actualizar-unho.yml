@@ -1,6 +1,7 @@
 # Copy to .github/workflows/actualizar-unho.yml in each app. Do not edit: comes from unho-hq/ci.
-# Every hour (and on demand from Actions) brings @unho/* to the newest version of the same major,
-# with the full CI, and builds the new commit's image so Ops can put it in development.
+# Every hour (and on demand from Actions) brings @unho/* to the newest version of the same major
+# on the repo's default branch (develop in apps, main in libraries), with the full CI, and builds
+# the new commit's image so Ops can put it in development.
 # If the app lives in a folder (as Ops in consola/), add under `uses`:  with: { directorio: consola }
 name: Actualizar @unho
 

@@ -3,7 +3,8 @@
 #
 # - Nothing new: ends in seconds.
 # - Something new: updates package.json and the lock, runs the FULL check (same as after a merge)
-#   and only if everything is green pushes the commit to main.
+#   and only if everything is green pushes the commit to the repo's default branch (develop in
+#   apps, which goes to development; main in libraries, which publish by tags).
 # - Then, if the repo is an app (unho.yaml and Dockerfile), it builds that commit's image here:
 #   a push made by a workflow does not start the repo's other workflows (GitHub's rule), so without
 #   this step Ops would never get an image to put in development (map §5.4, layer 3).
@@ -39,7 +40,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          ref: main
           fetch-depth: 0
       - uses: actions/checkout@v5
         with:
@@ -49,6 +49,10 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+      - name: Rama
+        id: rama
+        # The checkout above is the repo's default branch: develop in apps, main in libraries.
+        run: echo "rama=$(git rev-parse --abbrev-ref HEAD)" >> "$GITHUB_OUTPUT"
       - name: ¿Hay versión nueva?
         id: plan
         run: |
@@ -61,19 +65,20 @@ jobs:
         id: check
         if: steps.plan.outputs.cambios == 'true'
         env:
-          UNHO_CI_BASE: origin/main
+          UNHO_CI_BASE: origin/${{ steps.rama.outputs.rama }}
         run: bash ./check.sh
-      - name: Subir a main
+      - name: Subir a su rama
         id: subir
         if: steps.plan.outputs.cambios == 'true' && steps.check.outcome == 'success'
         env:
           MENSAJE: ${{ steps.plan.outputs.mensaje }}
+          RAMA: ${{ steps.rama.outputs.rama }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -u
           git commit -q -m "$MENSAJE" -m "Automatic: same major, full CI green on pop-os."
-          git push origin HEAD:main
+          git push origin "HEAD:$RAMA"
           git push -q origin --delete unho/actualizar 2>/dev/null || true
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "### ✓ $MENSAJE" >> "$GITHUB_STEP_SUMMARY"
@@ -82,6 +87,7 @@ jobs:
         env:
           REGISTRO: 127.0.0.1:5000
           COMMIT: ${{ steps.subir.outputs.commit }}
+          RAMA: ${{ steps.rama.outputs.rama }}
         run: |
           # Only apps have an image (the libraries do not).
           if [ ! -f unho.yaml ] || [ ! -f Dockerfile ]; then echo "Sin unho.yaml o Dockerfile: no es una app, no hay imagen."; exit 0; fi
@@ -90,7 +96,7 @@ jobs:
           app="$(sed -n 's/^app:[[:space:]]*\([a-z][a-z0-9-]*\).*/\1/p' unho.yaml | head -1)"
           [ -n "$app" ] || { echo "unho.yaml no dice app:"; exit 2; }
           etiqueta="$REGISTRO/$app:$COMMIT"
-          docker build --network host --label "unho.app=$app" --label "unho.commit=$COMMIT" --label "unho.rama=main" -t "$etiqueta" .
+          docker build --network host --label "unho.app=$app" --label "unho.commit=$COMMIT" --label "unho.rama=$RAMA" -t "$etiqueta" .
           docker push -q "$etiqueta"
           imagen="$(docker image inspect --format '{{index .RepoDigests 0}}' "$etiqueta")"
           echo "### Imagen: \`$imagen\`" >> "$GITHUB_STEP_SUMMARY"
@@ -103,6 +109,6 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git switch -c unho/actualizar
           git add -u
-          git commit -q -m "$MENSAJE" -m "Automatic: the full CI failed; not pushed to main."
+          git commit -q -m "$MENSAJE" -m "Automatic: the full CI failed; not pushed."
           git push -f origin unho/actualizar
           echo "### ✗ $MENSAJE: el CI completo falla. Rama unho/actualizar con el cambio." >> "$GITHUB_STEP_SUMMARY"

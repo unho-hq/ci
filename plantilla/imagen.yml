@@ -5,7 +5,7 @@ name: Imagen
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   # Every pull request gets its image too, for Ops' previews («Vistas previas»).
   pull_request:
   workflow_dispatch:

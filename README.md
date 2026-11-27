@@ -6,7 +6,7 @@ El CI común del ecosistema Unho (§12.6 del mapa). Todos los repos pasan los mi
 
 | | Rápido (`./check.sh --rapido`) | Completo (`./check.sh`) |
 |---|---|---|
-| Cuándo | En cada PR | Tras fusionar, sobre `main`, en segundo plano |
+| Cuándo | En cada PR | Tras fusionar, sobre `develop` y `main`, en segundo plano |
 | Qué | Los checks integrados + los `rapido.*` del repo | Todo lo anterior + los `completo.*` (build, e2e, migraciones…) |
 | Frena | El merge (y con él el despliegue en desarrollo) | **Solo el paso a producción** |
 
@@ -47,15 +47,15 @@ Para probar un cambio de este repo en otro sin publicarlo: `UNHO_CI_LOCAL=C:/Dev
 
 1. `bin/actualizar-unho.mjs` mira en el registro de casa si hay una `@unho/core` o `@unho/ui` más nueva **de la misma versión mayor** (la promesa de la 1.x: nada rompe). Una 2.0 no se aplica nunca sola: solo avisa.
 2. Si la hay: cambia `package.json` y el lock, y pasa el **CI completo**.
-3. Todo verde → commit `chore(deps): update @unho/ui to 1.1.0` directo a `main` (con él, a desarrollo). Algo rojo → no toca `main`; deja la rama `unho/actualizar` con el cambio y el workflow en rojo.
+3. Todo verde → commit `chore(deps): update @unho/ui to 1.1.0` directo a la rama principal del repo (`develop` en las apps, que va a desarrollo; `main` en las librerías) y, si es una app, su imagen. Algo rojo → no toca nada; deja la rama `unho/actualizar` con el cambio y el workflow en rojo.
 
 GitHub (plan gratuito) no deja que los workflows abran PR en la organización, así que la puerta es el CI completo antes de subir, en lugar del CI de un PR. Ningún token extra: solo el del propio workflow.
 
 ## La imagen de cada app
 
-`plantilla/imagen.yml` va en cada app como `.github/workflows/imagen.yml`. En cada push a `main` construye la imagen en `pop-os` (`Dockerfile` de la app) y la sube al registro de casa (`127.0.0.1:5000`, en `pop-os`), con el commit como etiqueta. El resumen del workflow dice la imagen por digest, que es lo que Ops despliega.
+`plantilla/imagen.yml` va en cada app como `.github/workflows/imagen.yml`. En cada push a `develop` (desarrollo) y a `main` (producción) construye la imagen en `pop-os` (`Dockerfile` de la app) y la sube al registro de casa (`127.0.0.1:5000`, en `pop-os`), con el commit como etiqueta. El resumen del workflow dice la imagen por digest, que es lo que Ops despliega.
 
-En cada pull request también se construye la imagen del commit de la rama (etiqueta `unho.rama`), para las vistas previas de Ops. «Poner una versión» solo ofrece las de `main`.
+En cada pull request también se construye la imagen del commit de la rama (etiqueta `unho.rama`), para las vistas previas de Ops. En Ops, desarrollo pone las de `develop` (o `main`) y producción solo las de `main`.
 
 Si la app no está en la raíz del repo (Ops vive en `consola/`), se le pasa la carpeta:
 
